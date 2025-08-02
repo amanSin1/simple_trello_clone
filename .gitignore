@@ -1,0 +1,48 @@
+
+---
+
+### 2. The `.gitignore` File
+
+
+```gitignore
+# Python
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+.Python
+build/
+develop-eggs/
+dist/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.ipynb_checkpoints
+.env
+.venv
+venv/
+env/
+
+# Django
+*.log
+*.pot
+*.mo
+*.js.map
+*.css.map
+media/
+static_root/
+db.sqlite3
+
+# IDEs and other
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

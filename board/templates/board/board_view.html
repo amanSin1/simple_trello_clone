@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ board.title }} - LiveBoard</title>
+
+    <!-- Bootstrap for styling -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        /* Custom styling to make it look like Trello */
+        body {
+            background-color: #0079BF; /* Trello-like blue */
+            color: #fff;
+            overflow-x: auto; /* Allow horizontal scrolling for many lists */
+            white-space: nowrap; /* Prevent lists from wrapping to the next line */
+        }
+        .board-container {
+            display: inline-flex; /* Use inline-flex to keep lists in a single row */
+            gap: 1rem;
+            padding: 1rem;
+            align-items: flex-start; /* Align lists to the top */
+            height: 100vh;
+        }
+        .list-wrapper {
+            background-color: #EBECF0; /* Light grey for list background */
+            color: #172B4D; /* Dark text */
+            border-radius: 8px;
+            width: 272px; /* Standard Trello list width */
+            flex-shrink: 0; /* Prevent lists from shrinking */
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 4rem);
+        }
+        .list-header {
+            font-weight: bold;
+            padding: 0.5rem;
+            flex-shrink: 0;
+        }
+        .card-list {
+            overflow-y: auto; /* Allow scrolling within a list if it has many cards */
+            min-height: 20px; /* So empty lists are still draggable targets */
+        }
+        .card-item {
+            background-color: #fff;
+            border-radius: 3px;
+            box-shadow: 0 1px 0 rgba(9,30,66,.25);
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            cursor: grab;
+            white-space: normal; /* Allow text in cards to wrap */
+        }
+        .card-item:hover {
+            background-color: #f4f5f7;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container-fluid">
+        <h1 class="p-3">{{ board.title }}</h1>
+
+        <div class="board-container">
+            <!-- Loop through the lists associated with our board -->
+            {% for list in board.lists.all %}
+                <div class="list-wrapper">
+                    <div class="list-header">{{ list.title }}</div>
+                    
+                    <!-- This div is the target for our drag-and-drop -->
+                    <!-- `data-list-id` is a custom attribute we'll use to identify the list. -->
+                    <!-- The `card-list` class is what we'll tell SortableJS to look for. -->
+                    <div class="card-list" data-list-id="{{ list.id }}">
+                        
+                        <!-- Loop through the cards in this specific list -->
+                        {% for card in list.cards.all %}
+                            <!-- `data-card-id` is a custom attribute to identify the card. -->
+                            <div class="card-item" data-card-id="{{ card.id }}">
+                                {{ card.title }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- SortableJS for drag-and-drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
+    <!-- Main JavaScript for WebSocket and SortableJS integration -->
+    <script>
+        // Get the board ID from the Django template context
+        const boardId = {{ board.id }};
+
+        // --- WebSocket Connection Setup ---
+        const boardSocket = new WebSocket(
+            'ws://' + window.location.host + '/ws/board/' + boardId + '/'
+        );
+
+        boardSocket.onopen = function(e) {
+            console.log('Board WebSocket connection opened!');
+        };
+
+        boardSocket.onclose = function(e) {
+            console.error('Board WebSocket closed unexpectedly. Please refresh the page.');
+        };
+
+        // --- Handling Incoming Messages from the Server ---
+        boardSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            console.log('Received message from server:', data);
+
+            if (data.type === 'card_moved') {
+                // This is the real-time magic! Another user moved a card.
+                // We need to find the card and move it on our screen to match.
+                
+                const cardId = data.card_id;
+                const newListId = data.new_list_id;
+                const newPosition = data.new_position;
+
+                const cardElement = document.querySelector(`[data-card-id="${cardId}"]`);
+                const newListElement = document.querySelector(`[data-list-id="${newListId}"]`);
+
+                if (cardElement && newListElement) {
+                    // Find all cards in the target list to place it at the correct index
+                    const cardsInNewList = newListElement.querySelectorAll('.card-item');
+                    
+                    // Move the card element into the new list element in the DOM
+                    // If the new position is beyond the current number of cards, just append it.
+                    if (newPosition >= cardsInNewList.length) {
+                        newListElement.appendChild(cardElement);
+                    } else {
+                        // Otherwise, insert it before the card that is currently at that position.
+                        newListElement.insertBefore(cardElement, cardsInNewList[newPosition]);
+                    }
+                    
+                    console.log(`Moved card ${cardId} to list ${newListId} at position ${newPosition} based on server event.`);
+                }
+            }
+        };
+
+        // --- SortableJS Drag-and-Drop Logic ---
+        document.addEventListener('DOMContentLoaded', function() {
+            // Find all elements with the class 'card-list'.
+            const cardLists = document.querySelectorAll('.card-list');
+
+            // Loop through each one and initialize SortableJS.
+            cardLists.forEach(list => {
+                new Sortable(list, {
+                    group: 'cards', // This allows dragging cards between lists
+                    animation: 150, // Smooth animation when moving cards
+                    
+                    // This function is called when a card is dropped into a new position.
+                    onEnd: function (evt) {
+                        const cardId = evt.item.dataset.cardId;
+        
+                        // `evt.to` is the list where the card was dropped
+                        const newListId = evt.to.dataset.listId;
+                        
+                        // `evt.newDraggableIndex` is the card's new position in the list (0-based)
+                        const newPosition = evt.newDraggableIndex;
+
+                        // Send the move data to the backend via WebSocket
+                        boardSocket.send(JSON.stringify({
+                            'type': 'card_move',
+                            'card_id': cardId,
+                            'new_list_id': newListId,
+                            'new_position': newPosition,
+                        }));
+                        
+                        console.log('Sent card_move message to server.');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
