@@ -4,8 +4,7 @@ LiveBoard is a full-stack web application that mimics the core functionality of 
 
 When one user moves a task card from "To Do" to "In Progress," the change is instantly reflected on the screens of all other team members viewing the same board, without needing a page refresh.
 
-![LiveBoard Demo](link_to_your_demo_gif_or_screenshot.png)  
-*(Optional: Add a screenshot or GIF of your project in action here!)*
+
 
 ---
 
